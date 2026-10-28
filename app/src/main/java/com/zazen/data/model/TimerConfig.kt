@@ -16,6 +16,8 @@ data class TimerConfig(
     /** Spacing between repeating bells in millis, or 0 to disable them. */
     val repeatEveryMillis: Long = 0,
     val repeatSoundResId: Int = R.raw.bell,
+    /** Bell rung as the sit begins, or 0 for none. */
+    val startSoundResId: Int = 0,
 ) : Parcelable {
     val isOpenEnded: Boolean get() = durationMillis <= 0L
 }

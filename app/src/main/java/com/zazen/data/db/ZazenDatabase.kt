@@ -8,7 +8,7 @@ import com.zazen.data.model.Preset
 
 @Database(
     entities = [MeditationSession::class, Preset::class],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(BellListConverter::class)

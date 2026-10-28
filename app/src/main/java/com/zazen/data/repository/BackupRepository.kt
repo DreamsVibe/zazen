@@ -35,6 +35,18 @@ class BackupRepository @Inject constructor(
         stream.use { it.write(json.toString(2).toByteArray(Charsets.UTF_8)) }
     }
 
+    /**
+     * Writes every session as a CSV spreadsheet (oldest first) to [uri], for
+     * opening in Sheets/Excel or your own analysis. Times are local.
+     */
+    suspend fun exportCsvToUri(uri: Uri) {
+        val sessions = sessionRepository.getAllSessions().first().sortedBy { it.startTime }
+        val csv = SessionCsv.build(sessions)
+        val stream = context.contentResolver.openOutputStream(uri)
+            ?: throw IOException("Unable to open output stream")
+        stream.use { it.write(csv.toByteArray(Charsets.UTF_8)) }
+    }
+
     /** Reads a backup JSON file from [uri] and replaces the current app data with it. */
     suspend fun importFromUri(uri: Uri): ImportResult {
         val stream = context.contentResolver.openInputStream(uri)
@@ -135,6 +147,9 @@ class BackupRepository @Inject constructor(
         put("completedMillis", session.completedMillis)
         put("completed", session.completed)
         put("notes", session.notes)
+        put("rating", session.rating)
+        put("technique", session.technique)
+        put("extended", session.extended)
     }
 
     private fun sessionFromJson(obj: JSONObject): MeditationSession = MeditationSession(
@@ -144,6 +159,9 @@ class BackupRepository @Inject constructor(
         completedMillis = obj.getLong("completedMillis"),
         completed = obj.getBoolean("completed"),
         notes = obj.optString("notes", ""),
+        rating = obj.optInt("rating", 0).coerceIn(0, 5),
+        technique = obj.optString("technique", ""),
+        extended = obj.optBoolean("extended", false),
     )
 
     private fun preferencesToJson(): JSONObject = JSONObject().apply {
@@ -154,6 +172,8 @@ class BackupRepository @Inject constructor(
         put("dndEnabled", preferencesRepository.dndEnabled)
         put("screenAlwaysOn", preferencesRepository.screenAlwaysOn)
         put("themeMode", preferencesRepository.themeMode)
+        put("startSoundName", preferencesRepository.startSoundName)
+        put("graceDays", preferencesRepository.graceDays)
         put(
             "intervalBells",
             JSONArray().apply {
@@ -179,6 +199,8 @@ class BackupRepository @Inject constructor(
         if (obj.has("dndEnabled")) preferencesRepository.dndEnabled = obj.getBoolean("dndEnabled")
         if (obj.has("screenAlwaysOn")) preferencesRepository.screenAlwaysOn = obj.getBoolean("screenAlwaysOn")
         if (obj.has("themeMode")) preferencesRepository.themeMode = obj.getString("themeMode")
+        if (obj.has("startSoundName")) preferencesRepository.startSoundName = obj.getString("startSoundName")
+        if (obj.has("graceDays")) preferencesRepository.graceDays = obj.getInt("graceDays")
 
         val intervalBellsArray = obj.optJSONArray("intervalBells")
         if (intervalBellsArray != null) {
@@ -191,6 +213,6 @@ class BackupRepository @Inject constructor(
     }
 
     companion object {
-        private const val BACKUP_VERSION = 1
+        private const val BACKUP_VERSION = 2
     }
 }

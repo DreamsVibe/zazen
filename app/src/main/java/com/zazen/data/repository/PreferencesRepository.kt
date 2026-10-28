@@ -66,6 +66,23 @@ class PreferencesRepository @Inject constructor(
         get() = prefs.getString("repeat_sound", Sound.DEFAULT.name) ?: Sound.DEFAULT.name
         set(value) = prefs.edit().putString("repeat_sound", value).apply()
 
+    /** Opening bell: a [Sound] name, or [NO_START_SOUND] to start silently. */
+    var startSoundName: String
+        get() = prefs.getString("start_sound", Sound.DEFAULT.name) ?: Sound.DEFAULT.name
+        set(value) = prefs.edit().putString("start_sound", value).apply()
+
+    /** Missed days allowed between sits before a streak breaks (0..3). */
+    private val _graceDays = MutableStateFlow(prefs.getInt("grace_days", 1))
+    val graceDaysFlow: StateFlow<Int> = _graceDays.asStateFlow()
+
+    var graceDays: Int
+        get() = _graceDays.value
+        set(value) {
+            val v = value.coerceIn(0, 3)
+            prefs.edit().putInt("grace_days", v).apply()
+            _graceDays.value = v
+        }
+
     // Theme mode: "system", "light", "dark"
     private val _themeMode = MutableStateFlow(
         prefs.getString("theme_mode", "system") ?: "system"
@@ -101,5 +118,9 @@ class PreferencesRepository @Inject constructor(
             val obj = arr.getJSONObject(i)
             obj.getLong("triggerAtMillis") to obj.getString("soundName")
         }
+    }
+
+    companion object {
+        const val NO_START_SOUND = "NONE"
     }
 }

@@ -12,14 +12,14 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.zazen"
+        applicationId = "com.zazen.plus"
         minSdk = 26
         targetSdk = 34
 
         // Keep these literal: F-Droid parses them straight out of this file to
         // detect new releases. Scheme is major * 10000 + minor * 100 + patch.
         versionCode = 10601
-        versionName = "1.6.1"
+        versionName = "1.6.1-plus.1"
     }
 
     dependenciesInfo {

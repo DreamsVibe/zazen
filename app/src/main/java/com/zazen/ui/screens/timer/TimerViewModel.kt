@@ -2,6 +2,7 @@ package com.zazen.ui.screens.timer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.zazen.data.model.Technique
 import com.zazen.data.model.TimerConfig
 import com.zazen.data.model.TimerState
 import com.zazen.data.repository.PreferencesRepository
@@ -27,6 +28,7 @@ class TimerViewModel @Inject constructor(
     fun pause() = timerManager.pause()
     fun resume() = timerManager.resume()
     fun stop() = timerManager.stop()
+    fun extend() = timerManager.extend()
     fun dismiss() = timerManager.reset()
     fun toggleVibrateOnly() = timerManager.toggleVibrateOnly()
 
@@ -39,6 +41,32 @@ class TimerViewModel @Inject constructor(
             } catch (_: Exception) { /* best-effort delete */ }
             dismiss()
             onDone()
+        }
+    }
+
+    fun saveReviewAndDismiss(
+        sessionId: Long,
+        rating: Int,
+        technique: Technique?,
+        notes: String,
+        onDone: () -> Unit,
+        onError: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            try {
+                if (sessionId > 0) {
+                    sessionRepository.updateReview(
+                        id = sessionId,
+                        rating = rating,
+                        technique = technique?.name.orEmpty(),
+                        notes = notes.trim(),
+                    )
+                }
+                dismiss()
+                onDone()
+            } catch (_: Exception) {
+                onError()
+            }
         }
     }
 

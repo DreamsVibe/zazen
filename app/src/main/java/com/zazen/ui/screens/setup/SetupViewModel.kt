@@ -58,6 +58,12 @@ class SetupViewModel @Inject constructor(
     )
     val endSound: StateFlow<Sound> = _endSound.asStateFlow()
 
+    /** Opening bell, or null to start silently. */
+    private val _startSound = MutableStateFlow(
+        Sound.entries.find { it.name == prefs.startSoundName }
+    )
+    val startSound: StateFlow<Sound?> = _startSound.asStateFlow()
+
     private val _dndEnabled = MutableStateFlow(prefs.dndEnabled)
     val dndEnabled: StateFlow<Boolean> = _dndEnabled.asStateFlow()
 
@@ -138,6 +144,11 @@ class SetupViewModel @Inject constructor(
     fun setEndSound(sound: Sound) {
         _endSound.value = sound
         prefs.endSoundName = sound.name
+    }
+
+    fun setStartSound(sound: Sound?) {
+        _startSound.value = sound
+        prefs.startSoundName = sound?.name ?: PreferencesRepository.NO_START_SOUND
     }
 
     fun toggleDnd() {
@@ -278,6 +289,7 @@ class SetupViewModel @Inject constructor(
                 dndEnabled = _dndEnabled.value,
                 repeatEveryMillis = _repeatEverySeconds.value * 1_000L,
                 repeatSoundResId = _repeatSound.value.resId,
+                startSoundResId = _startSound.value?.resId ?: 0,
             )
         )
     }

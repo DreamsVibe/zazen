@@ -118,6 +118,7 @@ fun SetupScreen(
     val vibrateOnly by viewModel.vibrateOnly.collectAsState()
     val bellVolume by viewModel.bellVolume.collectAsState()
     val endSound by viewModel.endSound.collectAsState()
+    val startSound by viewModel.startSound.collectAsState()
     val dndEnabled by viewModel.dndEnabled.collectAsState()
     val screenAlwaysOn by viewModel.screenAlwaysOn.collectAsState()
     val bells by viewModel.bells.collectAsState()
@@ -322,6 +323,15 @@ fun SetupScreen(
             }
 
             Spacer(Modifier.height(24.dp))
+
+            // --- Start bell sound ---
+            StartBellSelector(
+                selected = startSound,
+                onSelect = { viewModel.setStartSound(it) },
+                onPreview = { viewModel.previewSound(it) },
+            )
+
+            Spacer(Modifier.height(12.dp))
 
             // --- End bell sound ---
             EndBellSelector(
@@ -771,6 +781,70 @@ private fun ThemePickerDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
         },
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StartBellSelector(
+    selected: Sound?,
+    onSelect: (Sound?) -> Unit,
+    onPreview: (Sound) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedName = selected?.let { stringResource(it.displayNameRes) } ?: "None"
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+            modifier = Modifier.weight(1f),
+        ) {
+            OutlinedTextField(
+                value = selectedName,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Start bell") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                modifier = Modifier
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .fillMaxWidth(),
+                singleLine = true,
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text("None") },
+                    onClick = {
+                        onSelect(null)
+                        expanded = false
+                    },
+                )
+                Sound.entries.forEach { sound ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(sound.displayNameRes)) },
+                        onClick = {
+                            onSelect(sound)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+        IconButton(
+            onClick = { selected?.let(onPreview) },
+            enabled = selected != null,
+        ) {
+            Icon(
+                Icons.Default.PlayCircle,
+                "Preview start bell",
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

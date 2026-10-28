@@ -24,6 +24,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET notes = :notes WHERE id = :id")
     suspend fun updateNotes(id: Long, notes: String)
 
+    @Query("UPDATE sessions SET rating = :rating, technique = :technique, notes = :notes WHERE id = :id")
+    suspend fun updateReview(id: Long, rating: Int, technique: String, notes: String)
+
     @Query("SELECT * FROM sessions ORDER BY startTime DESC")
     fun getAllSessions(): Flow<List<MeditationSession>>
 
