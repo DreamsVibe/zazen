@@ -4,12 +4,24 @@ A fork of [Zazen](https://github.com/tupini07/zazen), the modern, minimal medita
 timer for Android, focused on session tracking and a warmer look. It installs as a
 separate app (`com.zazen.plus`), so it can sit next to the original.
 
+## Download
+
+Get the latest APK from the [Releases page](https://github.com/DreamsVibe/zazen/releases/latest)
+and open it on your phone. You may need to allow "Install unknown apps" first. Android
+8.0 or newer is required.
+
+To move your history over from the original Zazen, export a backup there (Stats →
+download icon), then in Zazen+ go to Stats → ⋮ → Restore from backup.
+
 ## What Zazen+ adds
 
 - **Start bell** — pick any bell, or none, to open a sit
 - **Start delay** — an optional 5 s to 1 min countdown before the start bell
 - **Counting past the bell** — when a timed sit ends, the clock keeps counting up the
   total time until you finish, and the full time is logged
+- **Hold to finish** — Finish sit and Stop need a one-second hold, so a stray touch
+  can't end a sit
+- **Bells on time with the screen off** — the phone stays awake while a sit runs
 - **Post-sit notes** — tag each sit Ānāpāna or Vipassana and add notes;
   all editable later
 - **Stats** — streaks with grace days, a GitHub-style heatmap, a calendar, trends by
@@ -47,6 +59,9 @@ mise install          # installs JDK 17 + Android SDK
 
 Or open the folder in Android Studio and press **Run**. The APK lands in
 `app/build/outputs/apk/debug/app-debug.apk`.
+
+For a smaller, optimised build, run `./gradlew assembleRelease`; the APK lands in
+`app/build/outputs/apk/release/app-release.apk`.
 
 ## Sound Credits
 
