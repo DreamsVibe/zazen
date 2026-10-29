@@ -112,26 +112,6 @@ internal fun TrendsTab(snapshot: StatsSnapshot) {
             TrendNote(points.map { if (it.sits > 0) it.avgMillis / 60_000f else null }, suffix = " min")
         }
 
-        SectionCard("Average rating") {
-            val ratings = points.map { it.avgRating?.toFloat() }
-            if (ratings.all { it == null }) {
-                Text(
-                    "Rate your sits after finishing to see this trend.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                LineChart(
-                    values = ratings,
-                    labels = labels,
-                    fixedMin = 1f,
-                    fixedMax = 5f,
-                    formatY = { "%.0f★".format(it) },
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
-                TrendNote(ratings, suffix = "★", decimals = true)
-            }
-        }
         Spacer(Modifier.height(12.dp))
     }
 }
@@ -139,7 +119,6 @@ internal fun TrendsTab(snapshot: StatsSnapshot) {
 @Composable
 private fun TimeOfDayCard(snapshot: StatsSnapshot) {
     val buckets = snapshot.timeOfDay
-    val best = buckets.filter { it.avgRating != null && it.sits >= 3 }.maxByOrNull { it.avgRating!! }
     val busiest = buckets.maxByOrNull { it.millis }
     SectionCard("When you sit · all time") {
         BarChart(
@@ -149,24 +128,11 @@ private fun TimeOfDayCard(snapshot: StatsSnapshot) {
             showEveryLabel = true,
             highlightIndex = buckets.indexOf(busiest),
         )
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth()) {
-            buckets.forEach { b ->
-                Text(
-                    if (b.sits == 0) "" else formatRating(b.avgRating),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-        }
         Spacer(Modifier.height(8.dp))
         val lines = buildList {
             if (busiest != null && busiest.sits > 0) {
                 add("Most of your time is in ${busiest.label} (${busiest.sits} sits, avg ${formatMinutesPrecise(busiest.avgMillis)}).")
             }
-            if (best != null) add("Your best-rated sits start ${best.label} — ${formatRating(best.avgRating)} on average.")
         }
         lines.forEach {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

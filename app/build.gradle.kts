@@ -18,8 +18,8 @@ android {
 
         // Keep these literal: F-Droid parses them straight out of this file to
         // detect new releases. Scheme is major * 10000 + minor * 100 + patch.
-        versionCode = 10601
-        versionName = "1.6.1-plus.1"
+        versionCode = 10602
+        versionName = "1.6.1-plus.2"
     }
 
     dependenciesInfo {

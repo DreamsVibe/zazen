@@ -18,8 +18,6 @@ data class SitRecord(
     val id: Long,
     val startMillis: Long,
     val sitMillis: Long,
-    /** 1..5, or 0 when unrated. */
-    val rating: Int = 0,
     /** Technique name or "". */
     val technique: String = "",
 )
@@ -52,7 +50,6 @@ data class TimeBucket(
     val sits: Int,
     val millis: Long,
     val avgMillis: Long,
-    val avgRating: Double?,
 )
 
 /** One week or month on a trend chart. */
@@ -61,7 +58,6 @@ data class PeriodPoint(
     val sits: Int,
     val millis: Long,
     val avgMillis: Long,
-    val avgRating: Double?,
 )
 
 enum class Tier(val label: String) { EASY("Easy"), MEDIUM("Medium"), HARD("Hard"), LEGENDARY("Legendary") }
@@ -93,8 +89,6 @@ data class StatsSnapshot(
     val weeks: List<PeriodPoint>,
     val months: List<PeriodPoint>,
     val avgSitMillis: Long,
-    val avgRating: Double?,
-    val ratedSits: Int,
     val longestSitMillis: Long,
     val milestones: List<Milestone>,
     val weekStart: DayOfWeek,
@@ -132,8 +126,6 @@ object StatsCalculator {
             return Totals(inRange.size, inRange.sumOf { it.sitMillis })
         }
 
-        val rated = sorted.filter { it.rating in 1..5 }
-
         return StatsSnapshot(
             today = totalsSince(today),
             week = totalsSince(thisWeekStart),
@@ -148,8 +140,6 @@ object StatsCalculator {
             months = periods(sorted, today, ::dateOf) { it.withDayOfMonth(1) }
                 .let { fillMonths(it, sorted.firstOrNull()?.let(::dateOf), today) },
             avgSitMillis = if (sorted.isEmpty()) 0 else sorted.sumOf { it.sitMillis } / sorted.size,
-            avgRating = if (rated.isEmpty()) null else rated.map { it.rating }.average(),
-            ratedSits = rated.size,
             longestSitMillis = sorted.maxOfOrNull { it.sitMillis } ?: 0L,
             milestones = milestones(sorted, ::dateOf, ::hourOf, graceDays),
             weekStart = weekStart,
@@ -206,14 +196,12 @@ object StatsCalculator {
     private fun timeOfDay(sits: List<SitRecord>, hourOf: (SitRecord) -> Int): List<TimeBucket> =
         (0 until 8).map { b ->
             val inBucket = sits.filter { hourOf(it) / 3 == b }
-            val rated = inBucket.filter { it.rating in 1..5 }
             TimeBucket(
                 label = BUCKET_LABELS[b],
                 startHour = b * 3,
                 sits = inBucket.size,
                 millis = inBucket.sumOf { it.sitMillis },
                 avgMillis = if (inBucket.isEmpty()) 0 else inBucket.sumOf { it.sitMillis } / inBucket.size,
-                avgRating = if (rated.isEmpty()) null else rated.map { it.rating }.average(),
             )
         }
 
@@ -228,17 +216,15 @@ object StatsCalculator {
         sits.filter { !dateOf(it).isAfter(today) }
             .groupBy { periodStart(dateOf(it)) }
             .mapValues { (start, list) ->
-                val rated = list.filter { it.rating in 1..5 }
                 PeriodPoint(
                     start = start,
                     sits = list.size,
                     millis = list.sumOf { it.sitMillis },
                     avgMillis = list.sumOf { it.sitMillis } / list.size,
-                    avgRating = if (rated.isEmpty()) null else rated.map { it.rating }.average(),
                 )
             }
 
-    private fun empty(start: LocalDate) = PeriodPoint(start, 0, 0, 0, null)
+    private fun empty(start: LocalDate) = PeriodPoint(start, 0, 0, 0)
 
     /** Every week from the first sit to this week, including empty ones. */
     private fun fillWeeks(

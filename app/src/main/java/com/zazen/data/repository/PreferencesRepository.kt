@@ -71,6 +71,25 @@ class PreferencesRepository @Inject constructor(
         get() = prefs.getString("start_sound", Sound.DEFAULT.name) ?: Sound.DEFAULT.name
         set(value) = prefs.edit().putString("start_sound", value).apply()
 
+    /** Countdown in seconds before the sit begins and the start bell rings, or 0 for none. */
+    var startDelaySeconds: Int
+        get() = prefs.getInt("start_delay_seconds", 0)
+        set(value) = prefs.edit().putInt("start_delay_seconds", value).apply()
+
+    /**
+     * Hides streaks and milestones in Stats. Purely visual: sits are logged and the
+     * stats computed exactly the same, so switching it back off shows everything.
+     */
+    private val _hideStreaks = MutableStateFlow(prefs.getBoolean("hide_streaks", false))
+    val hideStreaksFlow: StateFlow<Boolean> = _hideStreaks.asStateFlow()
+
+    var hideStreaks: Boolean
+        get() = _hideStreaks.value
+        set(value) {
+            prefs.edit().putBoolean("hide_streaks", value).apply()
+            _hideStreaks.value = value
+        }
+
     /** Missed days allowed between sits before a streak breaks (0..3). */
     private val _graceDays = MutableStateFlow(prefs.getInt("grace_days", 1))
     val graceDaysFlow: StateFlow<Int> = _graceDays.asStateFlow()

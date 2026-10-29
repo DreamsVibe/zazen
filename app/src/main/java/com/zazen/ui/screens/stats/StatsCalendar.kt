@@ -200,7 +200,7 @@ private fun MonthGrid(
     }
 }
 
-/** One sit in a compact list: time range, length, tags, stars. */
+/** One sit in a compact list: time range, length, tags. */
 @Composable
 internal fun SessionRow(session: MeditationSession, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
@@ -220,7 +220,6 @@ internal fun SessionRow(session: MeditationSession, onClick: () -> Unit, modifie
                 if (session.extended) Tag("Extended")
                 if (session.isOpenEnded) Tag("Open")
                 if (!session.completed && !session.isOpenEnded) Tag("Ended early")
-                Stars(session.rating, size = 12.dp)
             }
         }
         Text(

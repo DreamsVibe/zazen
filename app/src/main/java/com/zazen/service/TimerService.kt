@@ -10,6 +10,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import com.zazen.MainActivity
@@ -66,6 +67,12 @@ class TimerService : Service() {
     /** Last notification content key; used to throttle re-posts to ~1 Hz. */
     private var lastNotifiedKey = ""
 
+    /**
+     * Keeps the CPU awake while a sit runs. Without it the 4 Hz tick stops once the
+     * screen is off and the phone dozes, and bells ring late or not until it wakes.
+     */
+    private var wakeLock: PowerManager.WakeLock? = null
+
     private val tickRunnable = object : Runnable {
         override fun run() {
             tick()
@@ -80,16 +87,18 @@ class TimerService : Service() {
         const val ACTION_PAUSE = "com.zazen.PAUSE"
         const val ACTION_RESUME = "com.zazen.RESUME"
         const val ACTION_STOP = "com.zazen.STOP"
-        const val ACTION_EXTEND = "com.zazen.EXTEND"
         const val EXTRA_CONFIG = "config"
 
-        /**
-         * How long the "Keep sitting" prompt waits after the planned end before the
-         * sit finishes on its own and is logged at its planned length.
-         */
-        const val EXTEND_WINDOW_MS = 2 * 60_000L
-
         private const val TICK_INTERVAL_MS = 250L
+
+        /**
+         * How long past the planned end (or past now, for an open-ended sit) the wake
+         * lock may be held. A safety net so a lost stop can't drain the battery.
+         */
+        private const val WAKE_LOCK_SLACK_MS = 4 * 60 * 60_000L
+
+        /** Time past the end bell before a sit counts as extended. */
+        private const val EXTENDED_THRESHOLD_MS = 60_000L
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "zazen_timer"
         private const val DND_PREFS = "zazen_dnd"
@@ -131,13 +140,13 @@ class TimerService : Service() {
             ACTION_PAUSE -> pauseTimer()
             ACTION_RESUME -> resumeTimer()
             ACTION_STOP -> stopTimer()
-            ACTION_EXTEND -> extendTimer()
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
         handler.removeCallbacks(tickRunnable)
+        releaseWakeLock()
         restoreDnd()
         serviceScope.cancel()
         super.onDestroy()
@@ -158,9 +167,12 @@ class TimerService : Service() {
         accumulatedPauseMillis = 0
         lastNotifiedKey = ""
         finishing = false
-        phase = SitPhase.MAIN
-        startedAtRealtime = SystemClock.elapsedRealtime()
-        wallStartMillis = System.currentTimeMillis()
+        // A start delay pushes the sit's zero point into the future, so elapsed time
+        // runs negative while it counts down and nothing else needs to know about it.
+        val startDelay = config.startDelayMillis.coerceAtLeast(0)
+        phase = if (startDelay > 0) SitPhase.PREPARING else SitPhase.MAIN
+        startedAtRealtime = SystemClock.elapsedRealtime() + startDelay
+        wallStartMillis = System.currentTimeMillis() + startDelay
 
         // Preload all bell sounds + the end sound
         bells.forEach { soundPlayer.preload(it.soundResId) }
@@ -169,29 +181,25 @@ class TimerService : Service() {
 
         if (config.dndEnabled) enableDnd()
 
-        startForeground(NOTIFICATION_ID, buildNotification(notificationText(0L)))
+        val elapsedNow = computeElapsedMillis()
+        startForeground(NOTIFICATION_ID, buildNotification(notificationText(elapsedNow)))
 
-        // Opening bell
-        if (config.startSoundResId != 0) {
-            if (_vibrateOnly.value) soundPlayer.vibrate()
-            else soundPlayer.playFull(config.startSoundResId, config.bellVolume)
-        }
+        if (phase == SitPhase.MAIN) playStartSound()
 
+        acquireWakeLock()
         handler.post(tickRunnable)
-        publishRunning(0L)
+        publishRunning(elapsedNow)
     }
 
     private fun pauseTimer() {
-        if (_timerState.value !is TimerState.Running) return
+        // The start delay is only seconds long; it can be cancelled but not paused.
+        if (_timerState.value !is TimerState.Running || phase == SitPhase.PREPARING) return
         val elapsedNow = computeElapsedMillis()
-        // If the planned end has just been reached, let the prompt show instead —
-        // pausing a sit that is already over makes no sense.
-        if (checkPlannedEnd(elapsedNow) || phase == SitPhase.AWAITING_EXTEND) {
-            publishRunning(elapsedNow)
-            return
-        }
+        // Ring the end bell first if it's due, so the paused sit shows as counting up.
+        checkPlannedEnd(elapsedNow)
         pausedAtRealtime = SystemClock.elapsedRealtime()
         handler.removeCallbacks(tickRunnable)
+        releaseWakeLock()
         _timerState.value = TimerState.Paused(
             remainingMillis = if (openEnded) 0 else computeRemainingMillis(),
             totalMillis = if (openEnded) 0 else totalDurationMillis,
@@ -204,23 +212,25 @@ class TimerService : Service() {
     private fun resumeTimer() {
         if (_timerState.value !is TimerState.Paused) return
         accumulatedPauseMillis += SystemClock.elapsedRealtime() - pausedAtRealtime
+        acquireWakeLock()
         handler.post(tickRunnable)
         publishRunning(computeElapsedMillis())
-    }
-
-    /** "Keep sitting": turn the finished timed sit into an open-ended extension. */
-    private fun extendTimer() {
-        if (_timerState.value !is TimerState.Running || phase != SitPhase.AWAITING_EXTEND) return
-        phase = SitPhase.EXTENDED
-        val elapsedNow = computeElapsedMillis()
-        publishRunning(elapsedNow)
-        updateNotification(notificationText(elapsedNow))
     }
 
     private fun stopTimer() {
         if (finishing || _timerState.value !is TimerState.Running && _timerState.value !is TimerState.Paused) return
         finishing = true
         handler.removeCallbacks(tickRunnable)
+        releaseWakeLock()
+        // Stopped during the start delay: the sit never began, so there's nothing to log.
+        if (phase == SitPhase.PREPARING) {
+            _timerState.value = TimerState.Idle
+            currentConfig = null
+            restoreDnd()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         // Stopping while paused: the in-progress pause hasn't been folded into
         // accumulatedPauseMillis yet, so settle it first or the time spent
         // paused gets logged as sitting time.
@@ -242,19 +252,14 @@ class TimerService : Service() {
                 completed = true
                 extended = false
             }
-            phase == SitPhase.EXTENDED -> {
-                playEndSound()
+            // Past the planned end: the clock has been counting up since the end bell,
+            // and the whole sit is logged. The bell already rang, unless it's due right
+            // now because the tick hadn't caught up yet.
+            phase == SitPhase.EXTENDED || elapsed >= totalDurationMillis -> {
+                if (phase == SitPhase.MAIN) playEndSound()
                 loggedMillis = elapsed
                 completed = true
-                extended = true
-            }
-            // The planned bell already rang (or is due right now). The prompt time
-            // isn't counted — only "Keep sitting" adds time beyond the plan.
-            phase == SitPhase.AWAITING_EXTEND || elapsed >= totalDurationMillis -> {
-                if (phase == SitPhase.MAIN) playEndSound()
-                loggedMillis = totalDurationMillis
-                completed = true
-                extended = false
+                extended = elapsed - totalDurationMillis >= EXTENDED_THRESHOLD_MS
             }
             // Ended early.
             else -> {
@@ -286,10 +291,17 @@ class TimerService : Service() {
     private fun tick() {
         val elapsed = computeElapsedMillis()
 
-        // Nobody tapped "Keep sitting" — finish at the planned length.
-        if (phase == SitPhase.AWAITING_EXTEND && elapsed - totalDurationMillis >= EXTEND_WINDOW_MS) {
-            stopTimer()
-            return
+        if (phase == SitPhase.PREPARING) {
+            if (elapsed < 0) {
+                publishRunning(elapsed)
+                updateNotification(notificationText(elapsed))
+                return
+            }
+            // The delay is over: the sit begins now. Pin the logged start time to the
+            // moment it actually began, in case the tick ran late.
+            phase = SitPhase.MAIN
+            wallStartMillis = System.currentTimeMillis() - elapsed
+            playStartSound()
         }
 
         val volume = currentConfig?.bellVolume ?: 1f
@@ -304,11 +316,10 @@ class TimerService : Service() {
 
         // Fire repeating bells. If the device slept through several intervals we
         // ring once and fast-forward to the next boundary, rather than firing a
-        // burst of overlapping bells for every interval that was missed. They stay
-        // quiet while the "Keep sitting" prompt is up.
+        // burst of overlapping bells for every interval that was missed.
         if (repeatEveryMillis > 0 && nextRepeatAtMillis <= elapsed) {
             val collidesWithEnd = !openEnded && nextRepeatAtMillis == totalDurationMillis
-            if (!collidesWithEnd && phase != SitPhase.AWAITING_EXTEND) {
+            if (!collidesWithEnd) {
                 if (_vibrateOnly.value) {
                     soundPlayer.vibrate()
                 } else {
@@ -324,27 +335,30 @@ class TimerService : Service() {
         updateNotification(notificationText(elapsed))
     }
 
-    /** Rings the planned end bell and opens the "Keep sitting" prompt. Returns true if it just did. */
-    private fun checkPlannedEnd(elapsedMillis: Long): Boolean {
+    /** Rings the planned end bell and switches the clock to counting up the total. */
+    private fun checkPlannedEnd(elapsedMillis: Long) {
         if (!openEnded && phase == SitPhase.MAIN && elapsedMillis >= totalDurationMillis) {
-            phase = SitPhase.AWAITING_EXTEND
+            phase = SitPhase.EXTENDED
             playEndSound()
-            return true
         }
-        return false
     }
 
     private fun publishRunning(elapsedMillis: Long) {
-        val autoFinishIn = if (phase == SitPhase.AWAITING_EXTEND) {
-            (totalDurationMillis + EXTEND_WINDOW_MS - elapsedMillis).coerceAtLeast(0)
-        } else 0L
+        val sitElapsed = elapsedMillis.coerceAtLeast(0)
         _timerState.value = TimerState.Running(
-            remainingMillis = if (openEnded) 0 else (totalDurationMillis - elapsedMillis).coerceAtLeast(0),
+            remainingMillis = if (openEnded) 0 else (totalDurationMillis - sitElapsed).coerceAtLeast(0),
             totalMillis = if (openEnded) 0 else totalDurationMillis,
-            elapsedMillis = elapsedMillis,
+            elapsedMillis = sitElapsed,
             phase = phase,
-            autoFinishInMillis = autoFinishIn,
+            startsInMillis = if (phase == SitPhase.PREPARING) -elapsedMillis else 0L,
         )
+    }
+
+    private fun playStartSound() {
+        val config = currentConfig ?: return
+        if (config.startSoundResId == 0) return
+        if (_vibrateOnly.value) soundPlayer.vibrate()
+        else soundPlayer.playFull(config.startSoundResId, config.bellVolume)
     }
 
     private fun playEndSound() {
@@ -354,6 +368,20 @@ class TimerService : Service() {
         } else {
             soundPlayer.playFull(config?.endSoundResId ?: R.raw.bell, config?.bellVolume ?: 1f)
         }
+    }
+
+    private fun acquireWakeLock() {
+        val lock = wakeLock ?: getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "zazen:timer")
+            .apply { setReferenceCounted(false) }
+            .also { wakeLock = it }
+        // Includes any start delay still to run, since elapsed is negative then.
+        val untilPlannedEnd = if (openEnded) 0L else (totalDurationMillis - computeElapsedMillis()).coerceAtLeast(0)
+        lock.acquire(untilPlannedEnd + WAKE_LOCK_SLACK_MS)
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.takeIf { it.isHeld }?.release()
     }
 
     private fun computeElapsedMillis(): Long =
@@ -411,10 +439,11 @@ class TimerService : Service() {
 
     private fun notificationText(elapsedMillis: Long, paused: Boolean = false): String {
         val base = when {
+            // Round up so a 10 s delay starts at "00:10", not "00:09".
+            phase == SitPhase.PREPARING -> "Starting in ${formatTime((-elapsedMillis + 999) / 1000 * 1000)}"
             openEnded -> getString(R.string.notification_text, formatTime(elapsedMillis))
-            phase == SitPhase.AWAITING_EXTEND -> "Sit complete — tap Keep sitting to extend"
             phase == SitPhase.EXTENDED ->
-                "Extra time +${formatTime(elapsedMillis - totalDurationMillis)} · ${formatTime(elapsedMillis)} total"
+                "${formatTime(elapsedMillis)} total · +${formatTime(elapsedMillis - totalDurationMillis)} past the bell"
             else -> getString(
                 R.string.notification_text,
                 formatTime((totalDurationMillis - elapsedMillis).coerceAtLeast(0)),
@@ -447,9 +476,8 @@ class TimerService : Service() {
             .setOnlyAlertOnce(true)
 
         when (phase) {
-            SitPhase.AWAITING_EXTEND -> {
-                builder.addAction(0, "Keep sitting", servicePendingIntent(3, ACTION_EXTEND))
-                builder.addAction(0, "Finish", servicePendingIntent(2, ACTION_STOP))
+            SitPhase.PREPARING -> {
+                builder.addAction(0, "Cancel", servicePendingIntent(2, ACTION_STOP))
             }
             SitPhase.EXTENDED -> {
                 builder.addAction(0, getString(R.string.timer_cd_pause), servicePendingIntent(1, ACTION_PAUSE))

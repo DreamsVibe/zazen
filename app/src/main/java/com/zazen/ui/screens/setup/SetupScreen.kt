@@ -119,6 +119,7 @@ fun SetupScreen(
     val bellVolume by viewModel.bellVolume.collectAsState()
     val endSound by viewModel.endSound.collectAsState()
     val startSound by viewModel.startSound.collectAsState()
+    val startDelaySeconds by viewModel.startDelaySeconds.collectAsState()
     val dndEnabled by viewModel.dndEnabled.collectAsState()
     val screenAlwaysOn by viewModel.screenAlwaysOn.collectAsState()
     val bells by viewModel.bells.collectAsState()
@@ -329,6 +330,14 @@ fun SetupScreen(
                 selected = startSound,
                 onSelect = { viewModel.setStartSound(it) },
                 onPreview = { viewModel.previewSound(it) },
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // --- Countdown before the sit begins ---
+            StartDelaySelector(
+                selectedSeconds = startDelaySeconds,
+                onSelect = { viewModel.setStartDelay(it) },
             )
 
             Spacer(Modifier.height(12.dp))
@@ -844,6 +853,62 @@ private fun StartBellSelector(
                 "Preview start bell",
             )
         }
+    }
+}
+
+private val START_DELAY_OPTIONS = listOf(0, 5, 10, 20, 30, 60)
+
+private fun startDelayLabel(seconds: Int): String = when {
+    seconds <= 0 -> "None"
+    seconds % 60 == 0 -> "${seconds / 60} min"
+    else -> "$seconds sec"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StartDelaySelector(
+    selectedSeconds: Int,
+    onSelect: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    // Leaves room on the right to line up with the bell pickers' preview buttons.
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.weight(1f),
+    ) {
+        OutlinedTextField(
+            value = startDelayLabel(selectedSeconds),
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Delay before start bell") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
+            singleLine = true,
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            START_DELAY_OPTIONS.forEach { seconds ->
+                DropdownMenuItem(
+                    text = { Text(startDelayLabel(seconds)) },
+                    onClick = {
+                        onSelect(seconds)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
+        Spacer(Modifier.width(48.dp))
     }
 }
 

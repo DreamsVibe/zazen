@@ -134,7 +134,6 @@ private fun HistoryItem(
                 if (session.extended) Tag("Extended")
                 if (session.isOpenEnded) Tag("Open")
                 if (!session.completed && !session.isOpenEnded) Tag("Ended early")
-                Stars(session.rating, size = 12.dp)
             }
             if (session.notes.isNotBlank()) {
                 Text(
@@ -167,7 +166,6 @@ internal fun formatSessionsForClipboard(sessions: List<MeditationSession>): Stri
             add("${formatLongDate(s.localDate())} ${formatClock(s.startDateTime())}–${formatClock(s.endDateTime())}")
             add(formatMinutesPrecise(s.completedMillis))
             s.techniqueOrNull?.let { add(it.shortLabel) }
-            if (s.rating > 0) add("${s.rating}★")
         }
         val notes = s.notes.trim()
         "- " + parts.joinToString(" · ") + if (notes.isNotEmpty()) ": $notes" else ""

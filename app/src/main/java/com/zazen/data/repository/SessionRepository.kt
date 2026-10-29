@@ -22,8 +22,8 @@ class SessionRepository @Inject constructor(
 
     suspend fun updateNotes(id: Long, notes: String) = sessionDao.updateNotes(id, notes)
 
-    suspend fun updateReview(id: Long, rating: Int, technique: String, notes: String) =
-        sessionDao.updateReview(id, rating.coerceIn(0, 5), technique, notes)
+    suspend fun updateReview(id: Long, technique: String, notes: String) =
+        sessionDao.updateReview(id, technique, notes)
 
     /** Replaces all stored sessions with [sessions], used when restoring a backup. */
     suspend fun replaceAll(sessions: List<MeditationSession>) {

@@ -14,7 +14,7 @@ object SessionCsv {
         "id", "date", "weekday", "start_time", "end_time",
         "planned_minutes", "sat_minutes", "sat_seconds",
         "type", "open_ended", "completed", "extended",
-        "technique", "rating", "notes",
+        "technique", "notes",
     )
 
     fun build(sessions: List<MeditationSession>, zone: ZoneId = ZoneId.systemDefault()): String {
@@ -45,7 +45,6 @@ object SessionCsv {
                 s.completed.toString(),
                 s.extended.toString(),
                 s.techniqueOrNull?.shortLabel.orEmpty(),
-                if (s.rating > 0) s.rating.toString() else "",
                 s.notes,
             )
             sb.append(row.joinToString(",") { escape(it) }).append("\r\n")

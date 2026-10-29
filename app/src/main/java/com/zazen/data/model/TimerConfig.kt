@@ -18,6 +18,8 @@ data class TimerConfig(
     val repeatSoundResId: Int = R.raw.bell,
     /** Bell rung as the sit begins, or 0 for none. */
     val startSoundResId: Int = 0,
+    /** Countdown before the sit begins and the start bell rings, or 0 to begin at once. */
+    val startDelayMillis: Long = 0,
 ) : Parcelable {
     val isOpenEnded: Boolean get() = durationMillis <= 0L
 }

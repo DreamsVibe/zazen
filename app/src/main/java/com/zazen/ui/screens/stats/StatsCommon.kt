@@ -11,14 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -26,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.zazen.data.model.MeditationSession
@@ -87,8 +80,6 @@ internal fun formatMinutesPrecise(millis: Long): String {
     val minutes = millis / 60_000.0
     return if (minutes < 10) "%.1f min".format(minutes).replace(".0 ", " ") else "${minutes.toInt()} min"
 }
-
-internal fun formatRating(r: Double?): String = r?.let { "%.1f★".format(it) } ?: "—"
 
 /** 0..4 intensity bucket for a day's total sitting time. */
 internal fun intensityLevel(millis: Long): Int {
@@ -159,21 +150,6 @@ internal fun BigNumber(value: String, label: String, modifier: Modifier = Modifi
 }
 
 @Composable
-internal fun Stars(rating: Int, size: Dp = 14.dp) {
-    if (rating <= 0) return
-    Row(modifier = Modifier.semantics { contentDescription = "Rated $rating of 5" }) {
-        (1..5).forEach { n ->
-            Icon(
-                if (n <= rating) Icons.Filled.Star else Icons.Filled.StarBorder,
-                contentDescription = null,
-                modifier = Modifier.size(size),
-                tint = if (n <= rating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-            )
-        }
-    }
-}
-
-@Composable
 internal fun Tag(text: String, emphasized: Boolean = false) {
     Box(
         modifier = Modifier
@@ -200,10 +176,9 @@ internal fun Tag(text: String, emphasized: Boolean = false) {
 internal fun ReviewEditorDialog(
     session: MeditationSession,
     onDismiss: () -> Unit,
-    onSave: (rating: Int, technique: Technique?, notes: String) -> Unit,
+    onSave: (technique: Technique?, notes: String) -> Unit,
     onDelete: () -> Unit,
 ) {
-    var rating by remember(session.id) { mutableIntStateOf(session.rating) }
     var technique by remember(session.id) { mutableStateOf(session.techniqueOrNull) }
     var notes by remember(session.id) { mutableStateOf(session.notes) }
 
@@ -222,21 +197,6 @@ internal fun ReviewEditorDialog(
         },
         text = {
             Column {
-                Row {
-                    (1..5).forEach { n ->
-                        IconButton(
-                            onClick = { rating = if (rating == n) 0 else n },
-                            modifier = Modifier.semantics { contentDescription = "Rate $n of 5" },
-                        ) {
-                            Icon(
-                                if (n <= rating) Icons.Filled.Star else Icons.Filled.StarBorder,
-                                contentDescription = null,
-                                tint = if (n <= rating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Technique.entries.forEach { t ->
                         FilterChip(
@@ -258,7 +218,7 @@ internal fun ReviewEditorDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(rating, technique, notes) }) { Text("Save") }
+            TextButton(onClick = { onSave(technique, notes) }) { Text("Save") }
         },
         dismissButton = {
             Row {

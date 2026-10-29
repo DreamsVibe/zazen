@@ -35,9 +35,6 @@ class TimerManager @Inject constructor(
 
     fun stop() = sendCommand(TimerService.ACTION_STOP)
 
-    /** "Keep sitting" after the planned end bell. */
-    fun extend() = sendCommand(TimerService.ACTION_EXTEND)
-
     fun toggleVibrateOnly() = TimerService.toggleVibrateOnly()
 
     /** Move from Finished back to Idle */

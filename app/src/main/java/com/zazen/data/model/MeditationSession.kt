@@ -16,11 +16,11 @@ data class MeditationSession(
     val completed: Boolean,
     /** Optional user notes / reflections */
     val notes: String = "",
-    /** Post-sit rating, 1..5, or 0 when the sit wasn't rated. */
+    /** Legacy 1..5 rating. No longer collected or shown; kept so old data and backups round-trip. */
     val rating: Int = 0,
     /** [Technique] name, or "" when not tagged. */
     val technique: String = "",
-    /** True when "Keep sitting" was used to extend past the planned time. */
+    /** True when the sit carried on past its planned end bell. */
     val extended: Boolean = false,
 ) {
     /** True when this was an open-ended sit (no planned duration). */

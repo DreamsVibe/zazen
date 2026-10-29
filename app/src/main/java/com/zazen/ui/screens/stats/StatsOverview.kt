@@ -47,6 +47,7 @@ internal fun OverviewTab(
     snapshot: StatsSnapshot,
     graceDays: Int,
     onGraceDaysChange: (Int) -> Unit,
+    showStreak: Boolean = true,
 ) {
     Column(
         modifier = Modifier
@@ -54,7 +55,7 @@ internal fun OverviewTab(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        StreakCard(snapshot, graceDays, onGraceDaysChange)
+        if (showStreak) StreakCard(snapshot, graceDays, onGraceDaysChange)
         TotalsCard(snapshot)
         SectionCard("Last months") {
             Heatmap(snapshot.dayMillis, weekStart = snapshot.weekStart)
@@ -63,12 +64,6 @@ internal fun OverviewTab(
             Row(Modifier.fillMaxWidth()) {
                 BigNumber(formatMinutesPrecise(snapshot.avgSitMillis), "Average sit", Modifier.weight(1f))
                 BigNumber(formatHm(snapshot.longestSitMillis), "Longest sit", Modifier.weight(1f))
-                BigNumber(
-                    formatRating(snapshot.avgRating),
-                    "Avg rating",
-                    Modifier.weight(1f),
-                    sub = if (snapshot.ratedSits > 0) "${snapshot.ratedSits} rated" else null,
-                )
             }
         }
         Spacer(Modifier.height(12.dp))

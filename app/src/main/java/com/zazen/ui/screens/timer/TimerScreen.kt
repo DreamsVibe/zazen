@@ -7,13 +7,13 @@ import android.media.AudioManager
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityManager
 import android.widget.Toast
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,11 +34,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -54,14 +51,19 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -76,7 +78,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -91,6 +92,8 @@ import com.zazen.R
 import com.zazen.data.model.SitPhase
 import com.zazen.data.model.Technique
 import com.zazen.data.model.TimerState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -198,7 +201,8 @@ fun TimerScreen(
                     elapsed = s.elapsedMillis,
                     openEnded = s.isOpenEnded,
                     phase = s.phase,
-                    autoFinishIn = s.autoFinishInMillis,
+                    startsIn = s.startsInMillis,
+                    startDelay = cfg?.startDelayMillis ?: 0L,
                     repeatEveryMillis = repeatEveryMillis,
                     isPaused = false,
                     bellFractions = bellFractions,
@@ -206,7 +210,6 @@ fun TimerScreen(
                     onPause = { viewModel.pause() },
                     onResume = {},
                     onStop = { viewModel.stop() },
-                    onExtend = { viewModel.extend() },
                     onToggleVibrateOnly = { viewModel.toggleVibrateOnly() },
                 )
 
@@ -216,7 +219,8 @@ fun TimerScreen(
                     elapsed = s.elapsedMillis,
                     openEnded = s.isOpenEnded,
                     phase = s.phase,
-                    autoFinishIn = 0L,
+                    startsIn = 0L,
+                    startDelay = cfg?.startDelayMillis ?: 0L,
                     repeatEveryMillis = repeatEveryMillis,
                     isPaused = true,
                     bellFractions = bellFractions,
@@ -224,7 +228,6 @@ fun TimerScreen(
                     onPause = {},
                     onResume = { viewModel.resume() },
                     onStop = { viewModel.stop() },
-                    onExtend = {},
                     onToggleVibrateOnly = { viewModel.toggleVibrateOnly() },
                 )
 
@@ -235,8 +238,8 @@ fun TimerScreen(
                     extended = s.extended,
                     elapsedMillis = s.elapsedMillis,
                     plannedMillis = s.plannedMillis,
-                    onSave = { id, rating, technique, notes, onError ->
-                        viewModel.saveReviewAndDismiss(id, rating, technique, notes, onTimerDone, onError)
+                    onSave = { id, technique, notes, onError ->
+                        viewModel.saveReviewAndDismiss(id, technique, notes, onTimerDone, onError)
                     },
                     onDiscard = { id -> viewModel.discardAndDismiss(id, onTimerDone) },
                 )
@@ -256,7 +259,8 @@ private fun ActiveTimerContent(
     elapsed: Long,
     openEnded: Boolean,
     phase: SitPhase,
-    autoFinishIn: Long,
+    startsIn: Long,
+    startDelay: Long,
     repeatEveryMillis: Long,
     isPaused: Boolean,
     bellFractions: List<Float>,
@@ -264,7 +268,6 @@ private fun ActiveTimerContent(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
-    onExtend: () -> Unit,
     onToggleVibrateOnly: () -> Unit,
 ) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -296,58 +299,62 @@ private fun ActiveTimerContent(
             Text(
                 text = when {
                     isPaused -> "PAUSED"
-                    phase == SitPhase.AWAITING_EXTEND -> "SIT COMPLETE"
-                    phase == SitPhase.EXTENDED -> "KEEP SITTING"
+                    phase == SitPhase.PREPARING -> "STARTING IN"
+                    phase == SitPhase.EXTENDED -> "TOTAL TIME"
                     openEnded -> "OPEN SIT"
                     else -> "REMAINING"
                 },
                 style = MaterialTheme.typography.labelMedium.copy(letterSpacing = 3.sp),
-                color = if (phase == SitPhase.MAIN) muted else MaterialTheme.colorScheme.primary,
+                color = if (phase == SitPhase.EXTENDED) MaterialTheme.colorScheme.primary else muted,
                 modifier = if (isPaused) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
             )
             Spacer(Modifier.height(20.dp))
 
             Box(contentAlignment = Alignment.Center) {
                 val ringProgress = when {
+                    phase == SitPhase.PREPARING -> if (startDelay > 0) startsIn.toFloat() / startDelay else 0f
                     openEnded -> 0f
-                    phase != SitPhase.MAIN -> 1f
+                    phase == SitPhase.EXTENDED -> 1f
                     total > 0 -> remaining.toFloat() / total
                     else -> 0f
                 }
+                val counting = phase == SitPhase.MAIN && !openEnded
                 TimerRing(
                     progress = ringProgress,
-                    bellFractions = if (openEnded || phase != SitPhase.MAIN) emptyList() else bellFractions,
-                    // A slow orbiting dot (one lap a minute) shows an open-ended or
-                    // extended sit is alive. Driven by the 4 Hz tick, not an animation,
-                    // so a long sit doesn't redraw 60 times a second.
-                    orbitFraction = if (openEnded || phase == SitPhase.EXTENDED) (elapsed % 60_000L) / 60_000f else null,
-                    complete = phase != SitPhase.MAIN,
+                    bellFractions = if (counting) bellFractions else emptyList(),
+                    // A slow orbiting dot (one lap a minute) shows an open-ended sit, or
+                    // one counting up past its bell, is alive. Driven by the 4 Hz tick,
+                    // not an animation, so a long sit doesn't redraw 60 times a second.
+                    orbitFraction = if ((openEnded && phase == SitPhase.MAIN) || phase == SitPhase.EXTENDED) {
+                        (elapsed % 60_000L) / 60_000f
+                    } else null,
+                    complete = phase == SitPhase.EXTENDED,
                     modifier = Modifier
-                        // Shrinks while the Keep sitting button is up so both fit on small phones.
-                        .size(if (phase == SitPhase.AWAITING_EXTEND) 220.dp else 288.dp)
+                        .size(288.dp)
                         .clearAndSetSemantics { },
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     val main = when {
+                        // Round up so a 10 s delay starts at "00:10", not "00:09".
+                        phase == SitPhase.PREPARING -> (startsIn + 999) / 1000 * 1000
                         openEnded -> elapsed
                         phase == SitPhase.MAIN -> remaining
-                        phase == SitPhase.AWAITING_EXTEND -> total
                         else -> elapsed
                     }
                     Text(
                         text = formatTime(main),
-                        style = if (phase == SitPhase.AWAITING_EXTEND || main >= 3_600_000L) {
+                        style = if (main >= 3_600_000L) {
                             MaterialTheme.typography.displayMedium
                         } else {
                             MaterialTheme.typography.displayLarge
                         },
                         textAlign = TextAlign.Center,
-                        color = if (phase == SitPhase.AWAITING_EXTEND) muted else MaterialTheme.colorScheme.onSurface,
+                        color = if (phase == SitPhase.PREPARING) muted else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.clearAndSetSemantics { },
                     )
                     if (phase == SitPhase.EXTENDED) {
                         Text(
-                            "+${formatTime(elapsed - total)} beyond plan",
+                            "+${formatTime(elapsed - total)} past the bell",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.clearAndSetSemantics { },
@@ -358,7 +365,7 @@ private fun ActiveTimerContent(
 
             Spacer(Modifier.height(28.dp))
 
-            if (openEnded && repeatEveryMillis > 0 && !isPaused) {
+            if (openEnded && phase == SitPhase.MAIN && repeatEveryMillis > 0 && !isPaused) {
                 val untilNext = repeatEveryMillis - (elapsed % repeatEveryMillis)
                 Text(
                     stringResource(R.string.timer_next_bell_in, formatTime(untilNext)),
@@ -369,58 +376,130 @@ private fun ActiveTimerContent(
                 Spacer(Modifier.height(20.dp))
             }
 
-            when {
-                phase == SitPhase.AWAITING_EXTEND && !isPaused -> {
-                    KeepSittingButton(onClick = onExtend)
-                    Spacer(Modifier.height(12.dp))
+            when (phase) {
+                SitPhase.PREPARING -> {
                     TextButton(onClick = onStop) {
-                        Text("Finish here", style = MaterialTheme.typography.titleMedium)
+                        Text("Cancel", style = MaterialTheme.typography.titleMedium)
                     }
-                    Text(
-                        "Logs ${formatTime(total)} · finishes on its own in ${formatTime(autoFinishIn)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = muted,
-                        textAlign = TextAlign.Center,
-                    )
                 }
 
-                phase == SitPhase.EXTENDED -> {
-                    Button(
-                        onClick = onStop,
-                        modifier = Modifier
-                            .fillMaxWidth(0.8f)
-                            .height(72.dp),
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
-                    ) {
-                        Text("Finish sit", style = MaterialTheme.typography.titleLarge)
+                SitPhase.EXTENDED -> {
+                    val fill = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                    HoldToConfirm(onConfirm = onStop, label = "Finish sit", hint = "Hold to finish") { progress ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.8f)
+                                .height(72.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primaryContainer)
+                                .drawBehind { drawRect(fill, size = Size(size.width * progress, size.height)) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                "Finish sit",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                     PauseResumeButton(isPaused, onPause, onResume)
                 }
 
-                else -> {
+                SitPhase.MAIN -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                         PauseResumeButton(isPaused, onPause, onResume)
-                        OutlinedIconButton(
-                            onClick = onStop,
-                            modifier = Modifier.size(64.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        ) {
-                            Icon(
-                                Icons.Default.Stop,
-                                stringResource(R.string.timer_cd_stop),
-                                modifier = Modifier.size(28.dp),
-                                tint = muted,
-                            )
+                        val accent = MaterialTheme.colorScheme.primary
+                        HoldToConfirm(
+                            onConfirm = onStop,
+                            label = stringResource(R.string.timer_cd_stop),
+                            hint = "Hold to stop",
+                        ) { progress ->
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape)
+                                    .drawBehind {
+                                        if (progress > 0f) {
+                                            val w = 3.dp.toPx()
+                                            drawArc(
+                                                color = accent,
+                                                startAngle = -90f,
+                                                sweepAngle = 360f * progress,
+                                                useCenter = false,
+                                                topLeft = Offset(w / 2, w / 2),
+                                                size = Size(size.width - w, size.height - w),
+                                                style = Stroke(width = w, cap = StrokeCap.Round),
+                                            )
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Default.Stop, null, modifier = Modifier.size(28.dp), tint = muted)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Fires [onConfirm] only after being held for [holdMillis], so a stray touch can't end a
+ * sit. A short tap shows [hint] instead. Screen readers get a plain click action, since
+ * holding is awkward with TalkBack.
+ */
+@Composable
+private fun HoldToConfirm(
+    onConfirm: () -> Unit,
+    label: String,
+    hint: String,
+    holdMillis: Int = 1000,
+    content: @Composable (progress: Float) -> Unit,
+) {
+    val progress = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var showHint by remember { mutableStateOf(false) }
+    LaunchedEffect(showHint) {
+        if (showHint) {
+            delay(2000)
+            showHint = false
+        }
+    }
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .clearAndSetSemantics {
+                    role = Role.Button
+                    contentDescription = label
+                    onClick(label = label) { onConfirm(); true }
+                }
+                .pointerInput(onConfirm) {
+                    detectTapGestures(onPress = {
+                        val hold = scope.launch {
+                            progress.animateTo(1f, tween(holdMillis, easing = LinearEasing))
+                            onConfirm()
+                        }
+                        tryAwaitRelease()
+                        if (progress.value < 1f) {
+                            hold.cancel()
+                            showHint = true
+                            scope.launch { progress.animateTo(0f, tween(200)) }
+                        }
+                    })
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            content(progress.value)
+        }
+        Text(
+            if (showHint) hint else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp).clearAndSetSemantics { },
+        )
     }
 }
 
@@ -443,41 +522,7 @@ private fun PauseResumeButton(isPaused: Boolean, onPause: () -> Unit, onResume: 
     }
 }
 
-/** The big round "Keep sitting" button that appears when the planned time is up. */
-@Composable
-private fun KeepSittingButton(onClick: () -> Unit) {
-    val breathe = rememberInfiniteTransition(label = "breathe")
-    val scale = breathe.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(tween(2400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "breatheScale",
-    )
-    Button(
-        onClick = onClick,
-        modifier = Modifier
-            .size(176.dp)
-            .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
-            }
-            .semantics { contentDescription = "Keep sitting. Extends this sit until you tap Finish." },
-        shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-        ),
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("∞", fontSize = 40.sp, fontWeight = FontWeight.Light)
-            Text("Keep sitting", style = MaterialTheme.typography.titleMedium)
-        }
-    }
-}
-
 // --- Post-sit review ---
-
-private val RATING_WORDS = listOf("Restless", "Scattered", "Steady", "Focused", "Deep")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -488,11 +533,10 @@ private fun ReviewContent(
     extended: Boolean,
     elapsedMillis: Long,
     plannedMillis: Long,
-    onSave: (Long, Int, Technique?, String, () -> Unit) -> Unit,
+    onSave: (Long, Technique?, String, () -> Unit) -> Unit,
     onDiscard: (Long) -> Unit,
 ) {
     var notes by rememberSaveable { mutableStateOf("") }
-    var rating by rememberSaveable { mutableIntStateOf(0) }
     var techniqueName by rememberSaveable { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val hasValidId = sessionId > 0
@@ -523,43 +567,15 @@ private fun ReviewContent(
             style = MaterialTheme.typography.displayMedium,
             textAlign = TextAlign.Center,
         )
-        if (extended && plannedMillis > 0) {
+        if (completed && plannedMillis > 0 && elapsedMillis - plannedMillis >= 1_000L) {
             Text(
-                "Planned ${formatDurationWords(plannedMillis)} · +${formatDurationWords(elapsedMillis - plannedMillis)} extra",
+                "Planned ${formatDurationWords(plannedMillis)} · +${formatDurationWords(elapsedMillis - plannedMillis)} past the bell",
                 style = MaterialTheme.typography.bodyMedium,
                 color = muted,
             )
         }
 
         Spacer(Modifier.height(28.dp))
-
-        // Rating
-        SectionLabel("How was it?")
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            (1..5).forEach { n ->
-                IconButton(
-                    onClick = { rating = if (rating == n) 0 else n },
-                    modifier = Modifier
-                        .size(52.dp)
-                        .semantics { contentDescription = "Rate $n of 5, ${RATING_WORDS[n - 1]}" },
-                ) {
-                    Icon(
-                        if (n <= rating) Icons.Filled.Star else Icons.Filled.StarBorder,
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        tint = if (n <= rating) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                    )
-                }
-            }
-        }
-        Text(
-            if (rating == 0) "Tap to rate" else RATING_WORDS[rating - 1],
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (rating == 0) muted else MaterialTheme.colorScheme.onSurface,
-        )
-
-        Spacer(Modifier.height(24.dp))
 
         // Technique
         SectionLabel("What did you practise?")
@@ -597,7 +613,7 @@ private fun ReviewContent(
         Button(
             onClick = {
                 saving = true
-                onSave(sessionId, rating, technique, notes) { saving = false }
+                onSave(sessionId, technique, notes) { saving = false }
             },
             enabled = !saving && hasValidId,
             modifier = Modifier
@@ -608,7 +624,7 @@ private fun ReviewContent(
             Text(
                 when {
                     saving -> stringResource(R.string.action_saving)
-                    rating == 0 && technique == null && notes.isBlank() -> "Save without review"
+                    technique == null && notes.isBlank() -> "Save without notes"
                     else -> "Save sit"
                 },
                 style = MaterialTheme.typography.titleMedium,

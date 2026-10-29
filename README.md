@@ -7,12 +7,14 @@ separate app (`com.zazen.plus`), so it can sit next to the original.
 ## What Zazen+ adds
 
 - **Start bell** — pick any bell, or none, to open a sit
-- **Keep sitting** — when a timed sit ends, extend it indefinitely, then finish to log
-  the whole time
-- **Post-sit review** — rate each sit 1–5, tag it Ānāpāna or Vipassana, and add notes;
+- **Start delay** — an optional 5 s to 1 min countdown before the start bell
+- **Counting past the bell** — when a timed sit ends, the clock keeps counting up the
+  total time until you finish, and the full time is logged
+- **Post-sit notes** — tag each sit Ānāpāna or Vipassana and add notes;
   all editable later
 - **Stats** — streaks with grace days, a GitHub-style heatmap, a calendar, trends by
-  time of day and over time, 38 milestones, and a full history
+  time of day and over time, 38 milestones, and a full history (streaks and
+  milestones can be hidden)
 - **Export** — CSV of every sit, plus JSON backup and restore (old Zazen backups
   restore fine)
 - **New look** — warm ink and saffron palette (paper and ochre in light mode) with

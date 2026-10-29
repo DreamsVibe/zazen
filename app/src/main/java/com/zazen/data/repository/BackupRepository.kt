@@ -173,7 +173,9 @@ class BackupRepository @Inject constructor(
         put("screenAlwaysOn", preferencesRepository.screenAlwaysOn)
         put("themeMode", preferencesRepository.themeMode)
         put("startSoundName", preferencesRepository.startSoundName)
+        put("startDelaySeconds", preferencesRepository.startDelaySeconds)
         put("graceDays", preferencesRepository.graceDays)
+        put("hideStreaks", preferencesRepository.hideStreaks)
         put(
             "intervalBells",
             JSONArray().apply {
@@ -200,7 +202,9 @@ class BackupRepository @Inject constructor(
         if (obj.has("screenAlwaysOn")) preferencesRepository.screenAlwaysOn = obj.getBoolean("screenAlwaysOn")
         if (obj.has("themeMode")) preferencesRepository.themeMode = obj.getString("themeMode")
         if (obj.has("startSoundName")) preferencesRepository.startSoundName = obj.getString("startSoundName")
+        if (obj.has("startDelaySeconds")) preferencesRepository.startDelaySeconds = obj.getInt("startDelaySeconds")
         if (obj.has("graceDays")) preferencesRepository.graceDays = obj.getInt("graceDays")
+        if (obj.has("hideStreaks")) preferencesRepository.hideStreaks = obj.getBoolean("hideStreaks")
 
         val intervalBellsArray = obj.optJSONArray("intervalBells")
         if (intervalBellsArray != null) {

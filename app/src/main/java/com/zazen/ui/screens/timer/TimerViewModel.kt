@@ -28,7 +28,6 @@ class TimerViewModel @Inject constructor(
     fun pause() = timerManager.pause()
     fun resume() = timerManager.resume()
     fun stop() = timerManager.stop()
-    fun extend() = timerManager.extend()
     fun dismiss() = timerManager.reset()
     fun toggleVibrateOnly() = timerManager.toggleVibrateOnly()
 
@@ -46,7 +45,6 @@ class TimerViewModel @Inject constructor(
 
     fun saveReviewAndDismiss(
         sessionId: Long,
-        rating: Int,
         technique: Technique?,
         notes: String,
         onDone: () -> Unit,
@@ -57,7 +55,6 @@ class TimerViewModel @Inject constructor(
                 if (sessionId > 0) {
                     sessionRepository.updateReview(
                         id = sessionId,
-                        rating = rating,
                         technique = technique?.name.orEmpty(),
                         notes = notes.trim(),
                     )

@@ -36,6 +36,7 @@ class StatsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val graceDays: StateFlow<Int> = prefs.graceDaysFlow
+    val hideStreaks: StateFlow<Boolean> = prefs.hideStreaksFlow
 
     /** Everything the stats tabs draw, recomputed whenever the log or grace setting changes. */
     val snapshot: StateFlow<StatsSnapshot> =
@@ -57,13 +58,17 @@ class StatsViewModel @Inject constructor(
         prefs.graceDays = days
     }
 
+    fun setHideStreaks(hide: Boolean) {
+        prefs.hideStreaks = hide
+    }
+
     fun deleteSession(session: MeditationSession) {
         viewModelScope.launch { sessionRepository.deleteSession(session.id) }
     }
 
-    fun updateReview(sessionId: Long, rating: Int, technique: Technique?, notes: String) {
+    fun updateReview(sessionId: Long, technique: Technique?, notes: String) {
         viewModelScope.launch {
-            sessionRepository.updateReview(sessionId, rating, technique?.name.orEmpty(), notes.trim())
+            sessionRepository.updateReview(sessionId, technique?.name.orEmpty(), notes.trim())
         }
     }
 
@@ -105,7 +110,6 @@ private fun MeditationSession.toRecord() = SitRecord(
     id = id,
     startMillis = startTime,
     sitMillis = completedMillis,
-    rating = rating,
     technique = technique,
 )
 

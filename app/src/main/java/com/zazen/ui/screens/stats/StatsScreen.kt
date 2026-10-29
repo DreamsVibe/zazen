@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,8 +50,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val TABS = listOf("Overview", "Calendar", "Trends", "Milestones", "History")
-private const val HISTORY_TAB = 4
+private const val MILESTONES_TAB = "Milestones"
+private const val HISTORY_TAB = "History"
+private val TABS = listOf("Overview", "Calendar", "Trends", MILESTONES_TAB, HISTORY_TAB)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,8 +63,12 @@ fun StatsScreen(
     val sessions by viewModel.sessions.collectAsState()
     val snapshot by viewModel.snapshot.collectAsState()
     val graceDays by viewModel.graceDays.collectAsState()
+    val hideStreaks by viewModel.hideStreaks.collectAsState()
+    val tabs = if (hideStreaks) TABS - MILESTONES_TAB else TABS
 
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableStateOf(TABS.first()) }
+    // Falls back to Overview if the open tab has just been hidden.
+    val tab = selectedTab.takeIf { it in tabs } ?: tabs.first()
     var sessionToEdit by remember { mutableStateOf<MeditationSession?>(null) }
     var sessionToDelete by remember { mutableStateOf<MeditationSession?>(null) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -171,6 +176,11 @@ fun StatsScreen(
                                         importLauncher.launch(arrayOf("application/json"))
                                     },
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Hide streaks & milestones") },
+                                    trailingIcon = { Checkbox(checked = hideStreaks, onCheckedChange = null) },
+                                    onClick = { viewModel.setHideStreaks(!hideStreaks) },
+                                )
                             }
                         }
                     },
@@ -184,17 +194,17 @@ fun StatsScreen(
                 .padding(padding),
         ) {
             ScrollableTabRow(
-                selectedTabIndex = tab,
+                selectedTabIndex = tabs.indexOf(tab),
                 edgePadding = 12.dp,
                 containerColor = MaterialTheme.colorScheme.background,
                 divider = {},
             ) {
-                TABS.forEachIndexed { i, title ->
+                tabs.forEach { title ->
                     Tab(
-                        selected = tab == i,
+                        selected = tab == title,
                         onClick = {
-                            tab = i
-                            if (i != HISTORY_TAB) selectedIds = emptySet()
+                            selectedTab = title
+                            if (title != HISTORY_TAB) selectedIds = emptySet()
                         },
                         text = { Text(title, style = MaterialTheme.typography.titleSmall) },
                         selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -204,10 +214,15 @@ fun StatsScreen(
             }
             Box(Modifier.fillMaxSize()) {
                 when (tab) {
-                    0 -> OverviewTab(snapshot, graceDays, onGraceDaysChange = viewModel::setGraceDays)
-                    1 -> CalendarTab(snapshot, sessions, onSessionClick = { sessionToEdit = it })
-                    2 -> TrendsTab(snapshot)
-                    3 -> MilestonesTab(snapshot)
+                    "Overview" -> OverviewTab(
+                        snapshot,
+                        graceDays,
+                        onGraceDaysChange = viewModel::setGraceDays,
+                        showStreak = !hideStreaks,
+                    )
+                    "Calendar" -> CalendarTab(snapshot, sessions, onSessionClick = { sessionToEdit = it })
+                    "Trends" -> TrendsTab(snapshot)
+                    MILESTONES_TAB -> MilestonesTab(snapshot)
                     else -> HistoryTab(
                         sessions = sessions,
                         selectedIds = selectedIds,
@@ -225,8 +240,8 @@ fun StatsScreen(
         ReviewEditorDialog(
             session = session,
             onDismiss = { sessionToEdit = null },
-            onSave = { rating, technique, notes ->
-                viewModel.updateReview(session.id, rating, technique, notes)
+            onSave = { technique, notes ->
+                viewModel.updateReview(session.id, technique, notes)
                 sessionToEdit = null
             },
             onDelete = {
